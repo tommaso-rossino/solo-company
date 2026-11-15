@@ -1,7 +1,9 @@
 // Agent adapters: run one non-interactive prompt with the CLI the user already has.
 // Modes: "read" (look only), "edit" (may edit files in cwd), "full" (may also run commands).
 import { spawn } from 'node:child_process';
-import { which, state, today, journal } from './util.js';
+import { readFileSync } from 'node:fs';
+import { join, dirname, sep } from 'node:path';
+import { which, whichAll, state, today, journal } from './util.js';
 
 export const ADAPTERS = {
   claude: {
@@ -38,6 +40,27 @@ export function detect() {
     .filter((a) => a.path);
 }
 
+// Windows: npm installs agent CLIs as .cmd shims, which Node can only start through cmd.exe,
+// and cmd.exe cannot carry a multi-line prompt as an argument. So start the shim's
+// JavaScript file with node directly. Elsewhere, the name on PATH is enough.
+export function resolveBin(bin, { platform = process.platform, found = platform === 'win32' ? whichAll(bin) : [] } = {}) {
+  if (platform !== 'win32') return [bin];
+  const exe = found.find((f) => /\.exe$/i.test(f));
+  if (exe) return [exe];
+  const shim = found.find((f) => /\.cmd$/i.test(f));
+  if (shim) {
+    const js = shimTarget(readFileSync(shim, 'utf8'), dirname(shim));
+    if (js) return [process.execPath, js];
+  }
+  throw new Error(`${bin} on Windows: found ${found.join(', ') || 'nothing'}, need an .exe or an npm .cmd shim`);
+}
+
+// The script an npm .cmd shim runs: "%dp0%\node_modules\pkg\cli.js" %*
+export function shimTarget(text, dir) {
+  const m = text.match(/"%~?dp0%?\\([^"]+\.(?:c|m)?js)"\s+%\*/i);
+  return m ? join(dir, m[1].replace(/\\/g, sep)) : null;
+}
+
 // Run a prompt. `custom` = { command: "my-agent --flag" }: run through the shell,
 // prompt on stdin, mode in $SOLO_COMPANY_MODE.
 export function run(agent, prompt, { cwd = process.cwd(), timeoutMs = 30 * 60 * 1000, mode = 'read' } = {}) {
@@ -49,7 +72,8 @@ export function run(agent, prompt, { cwd = process.cwd(), timeoutMs = 30 * 60 * 
   } else {
     const a = ADAPTERS[agent.name];
     if (!a) throw new Error(`unknown agent: ${agent.name}`);
-    child = spawn(a.bin, a.args(prompt, mode), { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const [cmd, ...pre] = resolveBin(a.bin);
+    child = spawn(cmd, [...pre, ...a.args(prompt, mode)], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   }
   return new Promise((resolve) => {
     let out = '', err = '';

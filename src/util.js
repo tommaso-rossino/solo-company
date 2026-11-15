@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 // Small shared helpers: journal, state file, shell, JSON extraction.
 import { appendFileSync, readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
@@ -80,7 +81,18 @@ export function pidAlive(pid) {
 
 export function which(bin) {
   const r = spawnSync(process.platform === 'win32' ? 'where' : 'which', [bin], { encoding: 'utf8' });
-  return r.status === 0 ? r.stdout.trim().split('\n')[0] : null;
+  return r.status === 0 ? r.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[0] || null : null;
+}
+
+// Every match on PATH (Windows lists "claude", "claude.cmd", "claude.ps1"…).
+export function whichAll(bin) {
+  const r = spawnSync(process.platform === 'win32' ? 'where' : 'which', process.platform === 'win32' ? [bin] : ['-a', bin], { encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
+}
+
+// "~/x" and "~\\x" → home folder.
+export function expandHome(p) {
+  return String(p).replace(/^~(?=$|[\\/])/, homedir());
 }
 
 export function today() {

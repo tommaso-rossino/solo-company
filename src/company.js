@@ -4,7 +4,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULTS, dirOf, load, save } from './config.js';
 import { TicketStore } from './tickets.js';
-import { journal, exists, readJson, pidAlive } from './util.js';
+import { journal, exists, readJson, pidAlive, expandHome } from './util.js';
 import { register } from './registry.js';
 import { detect, ADAPTERS } from './agents.js';
 import * as g from './git.js';
@@ -25,7 +25,7 @@ export function createCompany(root, cfg, goal) {
   writeFileSync(join(dir, 'QUESTIONS.md'), '# Questions for the owner\n\nThe company writes here only about money, accounts and real choices.\n\n');
   writeFileSync(join(dir, 'tickets.json'), '[]\n');
   // Engine-local files never belong in the repository.
-  writeFileSync(join(dir, '.gitignore'), 'run.lock\nstate.json\n*.tmp\ntick.log\ninbox.jsonl\nrun.log\ndashboard.json\ndashboard.log\n');
+  writeFileSync(join(dir, '.gitignore'), 'run.lock\nstate.json\n*.tmp\ntick.log\ninbox.jsonl\nrun.log\ndashboard.json\ndashboard.log\ntick.cmd\n');
   for (const f of readdirSync(join(TEMPLATES, 'roles'))) copyFileSync(join(TEMPLATES, 'roles', f), join(dir, 'roles', f));
   journal(dir, 'company created');
   if (process.env.SOLO_COMPANY_NO_REGISTRY !== '1') register(root);
@@ -33,10 +33,21 @@ export function createCompany(root, cfg, goal) {
 }
 
 // Create a company without questions (from a chat): the folder and git are made if missing.
-export function quickCreate(path, { goal, agent, agentCommand, merge = 'auto', checks } = {}) {
+// Where a company goes when the owner names no folder: ~/companies/<name>.
+export function defaultProjectDir(name, goal) {
+  const words = String(name || goal || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter((w) => w.length > 2 && !STOP.has(w));
+  const slug = (name ? words : words.slice(0, 3)).join('-') || 'project';
+  const base = join(process.env.SOLO_COMPANY_PROJECTS || join(homedir(), 'companies'), slug);
+  let dir = base;
+  for (let i = 2; exists(join(dir, '.solo-company', 'config.json')); i++) dir = `${base}-${i}`;
+  return dir;
+}
+const STOP = new Set(['the', 'and', 'for', 'with', 'app', 'una', 'per', 'che', 'con', 'dei', 'delle', 'della', 'gli', 'les', 'des', 'pour', 'para', 'los', 'las', 'que', 'build', 'make', 'want', 'new']);
+
+export function quickCreate(path, { goal, name, agent, agentCommand, merge = 'auto', checks } = {}) {
   if (!String(goal || '').trim()) throw new Error('say what the project is: the goal becomes GOAL.md');
-  const root = resolve(String(path || '').replace(/^~(?=$|\/)/, homedir()));
-  if (!path) throw new Error('say where the project lives, e.g. ~/projects/recipes');
+  const root = resolve(path ? expandHome(path) : defaultProjectDir(name, goal));
   if (exists(join(root, '.solo-company', 'config.json'))) throw new Error(`${root} already has a company`);
   mkdirSync(root, { recursive: true });
   const run = (...a) => spawnSync('git', a, { cwd: root, encoding: 'utf8' });

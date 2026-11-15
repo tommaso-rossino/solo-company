@@ -133,3 +133,22 @@ test('connect writes JSON configs without losing what is there', async () => {
   assert.match(connect('claude', { dryRun: true }), /claude mcp add --scope user solo-company -- /);
   assert.throws(() => connect('notepad'), /unknown app/);
 });
+
+test('Windows: agents start through their npm shim script, not cmd.exe', async () => {
+  const { resolveBin, shimTarget } = await import('../src/agents.js');
+  assert.deepEqual(resolveBin('claude', { platform: 'darwin' }), ['claude']);
+  assert.deepEqual(resolveBin('claude', { platform: 'win32', found: ['C:\\bin\\claude', 'C:\\bin\\claude.exe'] }), ['C:\\bin\\claude.exe']);
+  const shim = '@ECHO off\r\nGOTO start\r\n:start\r\n"%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n';
+  assert.match(shimTarget(shim, '/npm'), /node_modules[\\/]@openai[\\/]codex[\\/]bin[\\/]codex\.js$/);
+  assert.equal(shimTarget('echo hi', '/npm'), null);
+  assert.throws(() => resolveBin('gemini', { platform: 'win32', found: [] }), /need an .exe/);
+});
+
+test('a company with no folder goes to ~/companies/<name>', () => {
+  process.env.SOLO_COMPANY_PROJECTS = mkdtempSync(join(tmpdir(), 'sc-projects-'));
+  assert.match(co.defaultProjectDir(null, 'A recipe app for busy families'), /[\\/]recipe-busy-families$/);
+  assert.match(co.defaultProjectDir('Ricette', 'x'), /[\\/]ricette$/);
+  const ctx = co.quickCreate(null, { goal: 'Un gestionale per la palestra', agentCommand: fakeAgent });
+  assert.match(ctx.root, /[\\/]gestionale-palestra$/);
+  assert.match(co.defaultProjectDir(null, 'Un gestionale per la palestra'), /gestionale-palestra-2$/);
+});

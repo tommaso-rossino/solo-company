@@ -20,7 +20,7 @@ Use these tools whenever the user talks to "the company" in any language ("compa
 - "How is it going?", "what is it doing?" → company_status.
 - Approving or sending back a mockup, resuming a suspended ticket, priorities, cancelling → company_decide.
 - Settings (night shift, teams, budget, research), the goal, or anything else → company_ceo with the user's words.
-- A new project → company_create.
+- A new project → company_create. If the owner gives no folder, leave path out and tell them where it went.
 - "Show me" / "open the dashboard" → company_dashboard.
 When there are several companies and the user does not say which, call company_list and ask. Answer the user in their language, briefly.`;
 
@@ -107,15 +107,16 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Project folder, e.g. ~/projects/recipes (created if missing)' },
+        path: { type: 'string', description: 'Project folder, e.g. ~/projects/recipes (created if missing). Leave it out when the owner names no folder: it goes in ~/companies/<name>.' },
+        name: { type: 'string', description: 'Short project name for the default folder, e.g. "recipes"' },
         goal: { type: 'string', description: 'What the owner is building, in a few sentences' },
         agent: { type: 'string', enum: Object.keys(ADAPTERS), description: 'Agent CLI the company runs on. Default: the first one installed.' },
         merge: { type: 'string', enum: ['auto', 'pr', 'manual'], description: 'auto (default): merge after checks and QA. pr: open pull requests. manual: leave branches.' },
       },
-      required: ['path', 'goal'],
+      required: ['goal'],
     },
-    run: ({ path, goal, agent, merge }) => {
-      const ctx = co.quickCreate(path, { goal, agent, merge });
+    run: ({ path, name, goal, agent, merge }) => {
+      const ctx = co.quickCreate(path, { goal, name, agent, merge });
       return `Company "${nameOf(ctx.root)}" created in ${ctx.root}, running on ${ctx.cfg.agent.name}, merge policy ${ctx.cfg.merge}. ${startWork(ctx.root)}: the PM plans the first tickets from the goal.`;
     },
   },

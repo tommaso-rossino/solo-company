@@ -28,7 +28,7 @@ It grew out of a setup used daily to build a real app with one human in the loop
 
 ## Install
 
-Node ≥ 22 and git are required.
+Node ≥ 22 and git are required. Works on macOS, Linux and Windows; the tests run on all three on every push.
 
 ```bash
 npm i -g solo-company        # or: npx solo-company <command>
@@ -39,7 +39,7 @@ solo-company init
 `init` asks a few questions:
 
 - what you are building;
-- which agent to use (it detects `claude`, `codex` and `gemini`, or you give it any command);
+- which agent to use (it detects `claude`, `codex`, `gemini`, `opencode` and `hermes`, or you give it any command);
 - whether agents may run commands;
 - the merge policy;
 - your checks (for example `npm test`);
@@ -105,6 +105,7 @@ Then, in any chat, in any language:
 > azienda, a che punto sei?
 > company, approve T4 — the mockup is fine
 > start a company in ~/projects/recipes: a recipe app for families
+> start a company for a habit tracker (no folder: it goes in `~/companies/habit-tracker`)
 
 The chat passes requests and decisions to the company. It does not build the feature itself. After a request or a decision the company starts working in a background process that outlives the chat. You can close the window.
 
@@ -118,7 +119,9 @@ The chat passes requests and decisions to the company. It does not build the fea
 | `company_dashboard` | starts the dashboard and returns its private link (`tunnel: true` for a phone) |
 | `company_report`, `company_work`, `company_list` | 24-hour report, start working now, all companies |
 
-Every company you create is listed in `~/.solo-company/companies.json`, so one chat can run several. When the chat is opened inside a project, that project's company is used. Otherwise you name it ("the recipes company"), or the chat asks you which one. `solo-company companies add` registers a company created before 0.3.
+Every company you create is listed in `~/.solo-company/companies.json`, so one chat can run several. When the chat is opened inside a project, that project's company is used. Otherwise you name it ("the recipes company"), or the chat asks you which one. `solo-company companies add` registers a company created before 0.3. `SOLO_COMPANY_PROJECTS` changes the default folder for new companies.
+
+Scheduled checks use launchd on macOS, crontab on Linux and Task Scheduler on Windows.
 
 ## How a ticket flows
 
