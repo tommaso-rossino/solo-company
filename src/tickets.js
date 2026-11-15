@@ -8,8 +8,8 @@ export const ROLES = ['dev', 'ux', 'qa', 'research'];
 // Allowed moves. Anything else is a bug in the caller.
 const MOVES = {
   todo: ['in_progress', 'split', 'cancelled', 'suspended'],
-  in_progress: ['review', 'todo', 'split', 'suspended', 'cancelled'],
-  review: ['done', 'bugs_open', 'todo', 'cancelled'],
+  in_progress: ['review', 'done', 'todo', 'split', 'suspended', 'cancelled'],
+  review: ['done', 'bugs_open', 'todo', 'suspended', 'cancelled'],
   bugs_open: ['done', 'cancelled'],
   suspended: ['todo', 'cancelled'],
   split: [],
@@ -38,7 +38,7 @@ export class TicketStore {
     return this.tickets.find((t) => t.id === id);
   }
 
-  add({ title, role, task, criteria, why = '', priority = 3, minutes = 15, after = null, draftOf = null }) {
+  add({ title, role, task, criteria, why = '', priority = 3, minutes = 15, after = null, draftOf = null, fixes = null, tag = null }) {
     if (!title || !task || !criteria) throw new Error('a ticket needs title, task and criteria');
     if (!ROLES.includes(role)) throw new Error(`unknown role: ${role}`);
     const t = {
@@ -49,6 +49,8 @@ export class TicketStore {
       state: draftOf ? 'draft' : 'todo',
       after,        // id of a ticket that must be done first
       draftOf,      // UX ticket whose approval releases this draft
+      fixes,        // ticket whose QA bug this one fixes
+      tag,          // engine marker, e.g. "build" for automatic build fixes
       attempts: 0,
       history: [],
       created: new Date().toISOString(),
@@ -67,6 +69,11 @@ export class TicketStore {
     t.state = state;
     this.log(t, note ? `${state}: ${note}` : state);
     return t;
+  }
+
+  // Tickets that are not finished.
+  open() {
+    return this.tickets.filter((t) => !['done', 'cancelled', 'split'].includes(t.state));
   }
 
   // Approving a mockup turns its draft dev tickets into real ones.

@@ -1,6 +1,4 @@
-# Architecture (draft)
-
-> Work in progress — this document is the design the code is being built towards.
+# Architecture
 
 ## Goals
 
@@ -31,8 +29,12 @@ your-project/
     ├── GOAL.md          # what you are building, in your words
     ├── REQUESTS.md      # your inbox to the PM: one request per line
     ├── tickets.json     # the ticket register (source of truth)
+    ├── QUESTIONS.md     # what the company needs from the owner
     ├── roles/           # editable role prompts
+    ├── mockups/ research/ reports/
     └── journal.log      # what happened, one line per event
+
+~/.solo-company/worktrees/<project>-<hash>/   # one worktree per ticket + _integration
 ```
 
 ## Ticket lifecycle
@@ -82,6 +84,22 @@ Subscription first: adapters use the CLI you are logged into. Paid API fallback 
 | `nightShift` | a reduced team working in a time window, with a morning report |
 | `budget` | daily cap on paid API credits |
 | `research` | a research team (competitors, similar projects) on PM request |
+
+## Modules
+
+| File | Job |
+|---|---|
+| `src/cli.js` | commands and the setup wizard |
+| `src/company.js` | create/open a company, owner actions (request, approve, resume, features…) |
+| `src/engine.js` | the work loop: PM → teams (in parallel) → QA → merge/promote |
+| `src/git.js` | worktrees, catch-up merges, integration branch, promotion, pull requests |
+| `src/agents.js` | adapters, limit detection, paid fallback with daily cap |
+| `src/prompts.js` | role file + context + the JSON answer contract per role |
+| `src/health.js` | scheduled tick: deterministic repairs, shifts, morning report |
+| `src/schedule.js` | launchd / crontab install |
+| `src/ceo.js` | owner messages → reply + actions |
+
+Agents answer in free text that ends with one JSON object; the engine takes the last parseable one. Anything unusable counts as a failed attempt, never as success.
 
 ## Decisions log
 

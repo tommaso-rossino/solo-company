@@ -1,7 +1,7 @@
 {
   "name": "solo-company",
-  "version": "0.0.1",
-  "description": "Turn your local AI coding agent into a small software company (WIP)",
+  "version": "0.1.0",
+  "description": "Turn your local AI coding agent into a small software company",
   "type": "module",
   "bin": {
     "solo-company": "bin/solo-company.js"
@@ -11,7 +11,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test test/*.test.js"
   },
   "keywords": ["ai", "agents", "claude", "codex", "gemini", "automation", "project-management"],
   "license": "MIT",

@@ -1,0 +1,174 @@
+// The company in a project: create/open it, and the owner's actions on it.
+import { mkdirSync, writeFileSync, copyFileSync, readdirSync, readFileSync, appendFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { DEFAULTS, dirOf, load, save } from './config.js';
+import { TicketStore } from './tickets.js';
+import { journal, exists } from './util.js';
+import * as schedule from './schedule.js';
+
+const TEMPLATES = join(dirname(fileURLToPath(import.meta.url)), '..', 'templates');
+
+export function createCompany(root, cfg, goal) {
+  const dir = dirOf(root);
+  if (exists(join(dir, 'config.json'))) throw new Error('.solo-company/ already exists here');
+  mkdirSync(join(dir, 'roles'), { recursive: true });
+  save(cfg, root);
+  writeFileSync(join(dir, 'GOAL.md'), `# Goal\n\n${goal || '(describe what you are building)'}\n`);
+  writeFileSync(join(dir, 'REQUESTS.md'), '# Requests\n\nOne request per line. The PM turns them into tickets.\n\n');
+  writeFileSync(join(dir, 'QUESTIONS.md'), '# Questions for the owner\n\nThe company writes here only about money, accounts and real choices.\n\n');
+  writeFileSync(join(dir, 'tickets.json'), '[]\n');
+  // Engine-local files never belong in the repository.
+  writeFileSync(join(dir, '.gitignore'), 'run.lock\nstate.json\n*.tmp\ntick.log\n');
+  for (const f of readdirSync(join(TEMPLATES, 'roles'))) copyFileSync(join(TEMPLATES, 'roles', f), join(dir, 'roles', f));
+  journal(dir, 'company created');
+  return openCompany(root);
+}
+
+export function openCompany(root = process.cwd()) {
+  const cfg = load(root);
+  if (!cfg) throw new Error('no company here yet: run "solo-company init"');
+  const dir = dirOf(root);
+  return { root, dir, cfg, store: new TicketStore(dir) };
+}
+
+export const saveConfig = (ctx) => save(ctx.cfg, ctx.root);
+
+// REQUESTS.md: "- [ ] text" is pending, "- [x] text" was handed to the PM.
+export function pendingRequests(dir) {
+  const f = join(dir, 'REQUESTS.md');
+  if (!exists(f)) return [];
+  return readFileSync(f, 'utf8').split('\n')
+    .map((l) => l.match(/^\s*-\s*\[ \]\s*(.+)$/)?.[1]?.trim())
+    .filter(Boolean);
+}
+
+export function markRequests(dir, done) {
+  const f = join(dir, 'REQUESTS.md');
+  const set = new Set(done);
+  const text = readFileSync(f, 'utf8').split('\n').map((l) => {
+    const m = l.match(/^(\s*-\s*)\[ \](\s*)(.+)$/);
+    return m && set.has(m[3].trim()) ? `${m[1]}[x]${m[2]}${m[3]}` : l;
+  }).join('\n');
+  writeFileSync(f, text);
+}
+
+export function addQuestion(dir, text) {
+  appendFileSync(join(dir, 'QUESTIONS.md'), `- ${new Date().toISOString().slice(0, 10)}: ${text}\n`);
+  journal(dir, `question for you: ${text}`);
+}
+
+export function request(ctx, text) {
+  text = String(text || '').trim().replace(/\s*\n\s*/g, ' ');
+  if (!text) throw new Error('write the request, e.g. solo-company request "add dark mode"');
+  appendFileSync(join(ctx.dir, 'REQUESTS.md'), `- [ ] ${text}\n`);
+  journal(ctx.dir, `request: ${text}`);
+}
+
+function need(ctx, id) {
+  const t = ctx.store.get(String(id || '').toUpperCase());
+  if (!t) throw new Error(`no ticket ${id}`);
+  return t;
+}
+
+// Approve a UX mockup: the ticket is done and its dev drafts become real tickets.
+export function approve(ctx, id) {
+  const t = need(ctx, id);
+  if (t.role !== 'ux') throw new Error(`${t.id} is not a UX ticket`);
+  if (t.state === 'review') ctx.store.move(t.id, 'done', 'mockup approved by the owner');
+  const released = ctx.store.approveMockup(t.id);
+  ctx.store.save();
+  journal(ctx.dir, `mockup ${t.id} approved, ${released.length} dev ticket(s) released`);
+  return released;
+}
+
+// Send a mockup back with the owner's feedback.
+export function reject(ctx, id, feedback) {
+  const t = need(ctx, id);
+  if (t.role !== 'ux' || t.state !== 'review') throw new Error(`${t.id} is not a mockup waiting for approval`);
+  t.lastFailure = `The owner asked for changes: ${feedback || '(no details)'}`;
+  t.attempts = 0;
+  ctx.store.move(t.id, 'todo', 'mockup sent back by the owner');
+  ctx.store.save();
+  journal(ctx.dir, `mockup ${t.id} sent back`);
+}
+
+export function resume(ctx, id, advice = '') {
+  const t = need(ctx, id);
+  if (t.state !== 'suspended') throw new Error(`${t.id} is not suspended (it is ${t.state})`);
+  t.attempts = 0;
+  if (advice) t.lastFailure = `Advice from the owner: ${advice}\n\n${t.lastFailure || ''}`;
+  ctx.store.move(t.id, 'todo', 'resumed by the owner');
+  ctx.store.save();
+  journal(ctx.dir, `${t.id} resumed`);
+}
+
+export function cancel(ctx, id) {
+  const t = need(ctx, id);
+  ctx.store.move(t.id, 'cancelled', 'cancelled by the owner');
+  for (const d of ctx.store.tickets.filter((x) => x.draftOf === t.id && x.state === 'draft')) ctx.store.move(d.id, 'cancelled', `${t.id} cancelled`);
+  ctx.store.save();
+  journal(ctx.dir, `${t.id} cancelled`);
+}
+
+export function setPriority(ctx, id, p) {
+  const t = need(ctx, id);
+  t.priority = Math.min(5, Math.max(1, Number(p) || 3));
+  ctx.store.log(t, `priority ${t.priority}`);
+  ctx.store.save();
+  journal(ctx.dir, `${t.id} priority ${t.priority}`);
+}
+
+export function setTeams(ctx, teams) {
+  for (const k of ['dev', 'ux', 'qa']) if (teams[k] !== undefined) ctx.cfg.teams[k] = Math.max(0, Math.min(8, Number(teams[k]) || 0));
+  saveConfig(ctx);
+  journal(ctx.dir, `teams: ${JSON.stringify(ctx.cfg.teams)}`);
+}
+
+export function setGoal(ctx, text) {
+  writeFileSync(join(ctx.dir, 'GOAL.md'), `# Goal\n\n${String(text).trim()}\n`);
+  journal(ctx.dir, 'goal updated');
+}
+
+// Turn an optional feature on or off. Settings are merged into the feature.
+export function setFeature(ctx, name, enabled, settings = {}) {
+  const f = ctx.cfg.features;
+  if (!(name in DEFAULTS.features)) throw new Error(`unknown feature "${name}" (features: ${Object.keys(DEFAULTS.features).join(', ')})`);
+  const allowed = Object.keys(DEFAULTS.features[name]);
+  for (const [k, v] of Object.entries(settings || {})) {
+    if (!allowed.includes(k)) throw new Error(`${name} has no setting "${k}" (settings: ${allowed.filter((x) => x !== 'enabled').join(', ')})`);
+    f[name][k] = v;
+  }
+  f[name].enabled = enabled;
+  // The night shift and the budget run inside the scheduled job.
+  if (enabled && name === 'nightShift') f.scheduledChecks.enabled = true;
+  saveConfig(ctx);
+  journal(ctx.dir, `${name} ${enabled ? 'enabled' : 'disabled'}${Object.keys(settings || {}).length ? ' ' + JSON.stringify(settings) : ''}`);
+  if (name === 'scheduledChecks' || (name === 'nightShift' && enabled)) {
+    const r = f.scheduledChecks.enabled ? schedule.install(ctx) : schedule.remove(ctx);
+    journal(ctx.dir, r);
+  }
+}
+
+export function summary(ctx) {
+  const { store, dir } = ctx;
+  const by = Object.groupBy(store.tickets, (t) => t.state);
+  const lines = [];
+  for (const state of ['in_progress', 'todo', 'review', 'bugs_open', 'suspended', 'draft', 'done', 'cancelled', 'split']) {
+    const list = by[state];
+    if (!list?.length) continue;
+    lines.push(`${state} (${list.length})`);
+    const shown = state === 'done' || state === 'cancelled' ? list.slice(-5) : list;
+    for (const t of shown) {
+      let note = '';
+      if (state === 'suspended') note = `  — ${t.suspendedFor || ''}`;
+      if (state === 'review' && t.role === 'ux') note = `  — mockup: .solo-company/mockups/${t.id}/ (approve or reject)`;
+      if (t.pr) note += `  — ${t.pr}`;
+      lines.push(`  ${t.id}  [${t.role}] P${t.priority}  ${t.title}${note}`);
+    }
+    if (shown.length < list.length) lines.push(`  … and ${list.length - shown.length} more`);
+  }
+  const pending = pendingRequests(dir);
+  if (pending.length) lines.push(`requests waiting for the PM (${pending.length})`, ...pending.map((r) => `  - ${r}`));
+  return lines.join('\n') || 'No tickets yet.';
+}

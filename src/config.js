@@ -6,15 +6,19 @@ export const DIR = '.solo-company';
 
 export const DEFAULTS = {
   agent: { name: 'claude' },
+  permissions: 'edit',         // edit: agents may edit files in their worktree | full: may also run commands
   teams: { dev: 1, ux: 1, qa: 1 },
   merge: 'pr',                 // auto | pr | manual
+  mainBranch: 'main',
   integrationBranch: 'dev',
+  worktreeDir: null,           // default: ~/.solo-company/worktrees/<project>
   checks: [],                  // shell commands run on a delivered branch, e.g. ["npm test"]
-  limits: { ticketMinutes: 30, maxAttempts: 2, qaBatch: 5 },
+  autoPlan: true,              // when idle, the PM plans the next steps from GOAL.md
+  limits: { ticketMinutes: 30, maxAttempts: 2, qaBatch: 5, agentMinutes: 30 },
   features: {
-    scheduledChecks: { enabled: false, everyMinutes: 30 },
+    scheduledChecks: { enabled: false, everyMinutes: 30, work: 'always' }, // work: always | night | never
     nightShift: { enabled: false, from: '01:00', to: '06:00', teams: 1 },
-    budget: { enabled: false, dailyUsd: 0 },
+    budget: { enabled: false, dailyUsd: 5, usdPerRun: 0.5, fallbackCommand: '' }, // paid fallback, prompt on stdin
     research: { enabled: false },
   },
 };

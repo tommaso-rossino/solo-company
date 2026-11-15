@@ -1,109 +1,183 @@
 import { createInterface } from 'node:readline';
-import { mkdirSync, writeFileSync, copyFileSync, readdirSync, existsSync, appendFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { DEFAULTS, dirOf, load, save } from './config.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { DEFAULTS, dirOf, load } from './config.js';
 import { detect } from './agents.js';
-import { TicketStore } from './tickets.js';
+import * as co from './company.js';
+import { work, plan } from './engine.js';
+import { tick, report, checkup } from './health.js';
+import { talk } from './ceo.js';
+import * as schedule from './schedule.js';
+import * as g from './git.js';
+import { exists } from './util.js';
 
-const TEMPLATES = join(dirname(fileURLToPath(import.meta.url)), '..', 'templates');
+const HELP = `solo-company — your local AI coding agent as a small software company
 
-const HELP = `solo-company — your local AI agent as a small software company (WIP)
+Start
+  init                          set up .solo-company/ in this git project
+  ceo "message"                 talk to the CEO in plain words ("enable the night shift")
+  request "text"                add a request for the PM
 
-  solo-company init                 set up .solo-company/ in this project
-  solo-company status               tickets by state
-  solo-company request "text"       add a request for the PM
-  solo-company approve <ticket>     approve a UX mockup: its dev drafts become tickets
-  solo-company help`;
+Work
+  run [--once] [--watch [min]]  PM plans, teams build, QA tests, merges per policy
+  plan                          only let the PM turn requests into tickets
+  status                        tickets by state
+  log [n]                       last n journal lines (default 30)
+  questions                     what the company is waiting on you for
+  report                        write a report of the last 24 hours
+
+Decide
+  approve <id>                  approve a UX mockup: its dev tickets start
+  reject <id> "what to change"  send a mockup back
+  resume <id> ["advice"]        restart a suspended ticket
+  cancel <id>                   cancel a ticket
+  priority <id> <1-5>           1 = most urgent
+
+Settings
+  enable <feature> [k=v …]      ${Object.keys(DEFAULTS.features).join(', ')}
+  disable <feature>
+  teams dev=2 ux=1 qa=1         how many teams work in parallel
+  config                        show the settings
+  schedule install|remove|status
+  tick                          what the scheduled job runs: health check, then work
+`;
 
 export async function main(argv) {
   const [cmd, ...rest] = argv;
+  const flag = (f) => rest.includes(f);
   switch (cmd) {
     case 'init': return init();
-    case 'status': return status();
-    case 'request': return request(rest.join(' '));
-    case 'approve': return approve(rest[0]);
-    case undefined: case 'help': case '--help': case '-h': console.log(HELP); return;
+    case 'status': return console.log(co.summary(co.openCompany()));
+    case 'request': co.request(co.openCompany(), rest.join(' ')); return console.log('Request added. The PM will turn it into tickets.');
+    case 'plan': { const r = await plan(co.openCompany()); return console.log(r.limited ? 'The agent is at its limit: try later.' : `${r.added} ticket(s) added.`); }
+    case 'run': return run(rest, flag);
+    case 'approve': { const r = co.approve(co.openCompany(), rest[0]); return console.log(`${rest[0]} approved: ${r.length} ticket(s) ready for the teams.`); }
+    case 'reject': co.reject(co.openCompany(), rest[0], rest.slice(1).join(' ')); return console.log('Sent back to UX.');
+    case 'resume': co.resume(co.openCompany(), rest[0], rest.slice(1).join(' ')); return console.log(`${rest[0]} is back in the queue.`);
+    case 'cancel': co.cancel(co.openCompany(), rest[0]); return console.log(`${rest[0]} cancelled.`);
+    case 'priority': co.setPriority(co.openCompany(), rest[0], rest[1]); return;
+    case 'ceo': case 'ask': case 'tell': {
+      const r = await talk(co.openCompany(), rest.join(' '));
+      console.log(`\n${r.reply}`);
+      for (const d of r.done) console.log(`  ✓ ${d}`);
+      return;
+    }
+    case 'enable': case 'disable': {
+      const ctx = co.openCompany();
+      co.setFeature(ctx, rest[0], cmd === 'enable', parseSettings(rest.slice(1)));
+      return console.log(JSON.stringify({ [rest[0]]: ctx.cfg.features[rest[0]] }, null, 2));
+    }
+    case 'teams': { const ctx = co.openCompany(); co.setTeams(ctx, parseSettings(rest)); return; }
+    case 'config': return console.log(JSON.stringify(co.openCompany().cfg, null, 2));
+    case 'schedule': {
+      const ctx = co.openCompany();
+      const sub = rest[0] || 'status';
+      if (!['install', 'remove', 'status'].includes(sub)) throw new Error('schedule install | remove | status');
+      if (sub !== 'status') { ctx.cfg.features.scheduledChecks.enabled = sub === 'install'; co.saveConfig(ctx); }
+      return console.log(schedule[sub](ctx));
+    }
+    case 'tick': { const r = await tick(co.openCompany()); if (r.busy) console.log('a run is already working'); return; }
+    case 'checkup': { const r = await checkup(co.openCompany()); return console.log(r.fixed.join('\n') || 'all good'); }
+    case 'report': return console.log(report(co.openCompany()));
+    case 'log': {
+      const f = join(dirOf(), 'journal.log');
+      if (!exists(f)) return console.log('No journal yet.');
+      return console.log(readFileSync(f, 'utf8').trim().split('\n').slice(-(Number(rest[0]) || 30)).join('\n'));
+    }
+    case 'questions': {
+      co.openCompany();
+      return console.log(readFileSync(join(dirOf(), 'QUESTIONS.md'), 'utf8').trim());
+    }
+    case undefined: case 'help': case '--help': case '-h': return console.log(HELP);
+    case '--version': case '-v': return console.log(JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version);
     default: throw new Error(`unknown command "${cmd}" (try: solo-company help)`);
   }
 }
 
+function parseSettings(args) {
+  const out = {};
+  for (const a of args) {
+    const i = a.indexOf('=');
+    if (i < 1) throw new Error(`expected key=value, got "${a}"`);
+    const k = a.slice(0, i), v = a.slice(i + 1);
+    out[k] = v === 'true' ? true : v === 'false' ? false : v !== '' && !isNaN(v) && !/^\d\d:\d\d$/.test(v) ? Number(v) : v;
+  }
+  return out;
+}
+
+async function run(rest, flag) {
+  const ctx = co.openCompany();
+  if (!flag('--watch')) {
+    await work(ctx, { once: flag('--once') });
+    return console.log('\n' + co.summary(ctx));
+  }
+  const n = Number(rest[rest.indexOf('--watch') + 1]) || 10;
+  console.log(`Working; checking for new work every ${n} min. Ctrl+C to stop.`);
+  for (;;) {
+    const fresh = co.openCompany(); // pick up edits made meanwhile
+    await work(fresh);
+    await new Promise((r) => setTimeout(r, n * 60 * 1000));
+  }
+}
+
 async function init(root = process.cwd()) {
-  const dir = dirOf(root);
-  if (existsSync(join(dir, 'config.json'))) throw new Error('.solo-company/ already exists here');
+  if (load(root)) throw new Error('.solo-company/ already exists here');
+  if (!g.isRepo(root)) throw new Error('run this inside a git repository with at least one commit (git init && git commit --allow-empty -m init)');
   // Line iterator instead of rl.question(): also works when answers are piped in.
   const rl = createInterface({ input: process.stdin });
   const lines = rl[Symbol.asyncIterator]();
-  const ask = async (q) => { process.stdout.write(q); const r = await lines.next(); return r.done ? '' : r.value; };
+  const ask = async (q, def = '') => {
+    process.stdout.write(def ? `${q} (${def}): ` : `${q}: `);
+    const r = await lines.next();
+    return (r.done ? '' : r.value).trim() || def;
+  };
+  const yes = async (q, def) => /^y/i.test(await ask(`${q} [y/n]`, def ? 'y' : 'n'));
+  let ctx;
   try {
     const cfg = structuredClone(DEFAULTS);
-    const goal = (await ask('What are you building? ')).trim();
+    console.log('solo-company setup — every answer can be changed later (solo-company config / ceo).\n');
+    const goal = await ask('What are you building? Describe it in a few sentences');
 
     const found = detect();
     const choices = [...found.map((a) => a.name), 'custom'];
-    console.log(found.length ? `Agents found: ${found.map((a) => a.label).join(', ')}` : 'No known agent CLI found on PATH.');
-    let pick = (await ask(`Agent to use [${choices.join('/')}] (${choices[0]}): `)).trim() || choices[0];
+    console.log(found.length ? `Agents found: ${found.map((a) => `${a.name} (${a.label})`).join(', ')}` : 'No known agent CLI found on PATH (claude, codex, gemini).');
+    let pick = await ask(`Agent the company runs on [${choices.join('/')}]`, choices[0]);
     if (!choices.includes(pick)) pick = 'custom';
     cfg.agent = pick === 'custom'
-      ? { name: 'custom', command: (await ask('Command that reads a prompt on stdin: ')).trim() }
+      ? { name: 'custom', command: await ask('Command that reads a prompt on stdin and prints the answer') }
       : { name: pick };
 
-    const merge = (await ask('Merge policy [auto/pr/manual] (pr): ')).trim() || 'pr';
-    cfg.merge = ['auto', 'pr', 'manual'].includes(merge) ? merge : 'pr';
+    cfg.permissions = (await yes('Let agents run commands (tests, builds) inside their own worktree? Otherwise they only edit files', false)) ? 'full' : 'edit';
 
-    const checks = (await ask('Checks to run on delivered work, comma separated (e.g. npm test): ')).trim();
+    cfg.mainBranch = g.currentBranch(root) || 'main';
+    console.log(`\nMerge policy for finished tickets:\n  auto   — merge into "${cfg.integrationBranch}" after checks, move "${cfg.mainBranch}" forward after QA\n  pr     — push the branch and open a pull request (needs a remote and gh)\n  manual — leave the branch, you merge`);
+    const merge = await ask('Merge policy [auto/pr/manual]', 'auto');
+    cfg.merge = ['auto', 'pr', 'manual'].includes(merge) ? merge : 'auto';
+
+    const guess = exists(join(root, 'package.json')) && JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts?.test ? 'npm test' : '';
+    const checks = await ask('Checks every delivery must pass, comma separated (empty for none)', guess);
     cfg.checks = checks ? checks.split(',').map((s) => s.trim()).filter(Boolean) : [];
 
-    mkdirSync(join(dir, 'roles'), { recursive: true });
-    save(cfg, root);
-    writeFileSync(join(dir, 'GOAL.md'), `# Goal\n\n${goal || '(describe what you are building)'}\n`);
-    writeFileSync(join(dir, 'REQUESTS.md'), '# Requests\n\nOne request per line. The PM turns them into tickets.\n\n');
-    writeFileSync(join(dir, 'tickets.json'), '[]\n');
-    for (const f of readdirSync(join(TEMPLATES, 'roles'))) copyFileSync(join(TEMPLATES, 'roles', f), join(dir, 'roles', f));
-    journal(dir, 'company created');
-    console.log(`\nDone. Edit ${join('.solo-company', 'GOAL.md')} and the role files any time.`);
+    cfg.teams.dev = Math.max(1, Number(await ask('How many dev teams in parallel', '1')) || 1);
+    cfg.autoPlan = await yes('When the queue is empty, let the PM plan the next steps from your goal', true);
+
+    ctx = co.createCompany(root, cfg, goal);
+
+    if (await yes('\nOptional: run on a schedule (health check every 30 min, work continues without you)', false)) {
+      co.setFeature(ctx, 'scheduledChecks', true);
+      if (await yes('Optional: night shift (01:00–06:00, one team, morning report)', false)) co.setFeature(ctx, 'nightShift', true);
+    }
+    const first = await yes(`\nLet the PM write the first tickets now with ${cfg.agent.name}`, true);
+    rl.close();
+    if (first) {
+      const r = await plan(ctx, { fromGoal: true });
+      if (r.added) console.log('\n' + co.summary(ctx));
+    }
   } finally {
     rl.close();
   }
-}
-
-function needCompany(root = process.cwd()) {
-  const cfg = load(root);
-  if (!cfg) throw new Error('no company here yet: run "solo-company init"');
-  return { cfg, dir: dirOf(root) };
-}
-
-function status() {
-  const { dir } = needCompany();
-  const store = new TicketStore(dir);
-  if (!store.tickets.length) return console.log('No tickets yet.');
-  const by = Object.groupBy(store.tickets, (t) => t.state);
-  for (const [state, list] of Object.entries(by)) {
-    console.log(`\n${state} (${list.length})`);
-    for (const t of list) console.log(`  ${t.id}  [${t.role}] P${t.priority}  ${t.title}`);
-  }
-}
-
-function request(text) {
-  if (!text.trim()) throw new Error('write the request, e.g. solo-company request "add dark mode"');
-  const { dir } = needCompany();
-  appendFileSync(join(dir, 'REQUESTS.md'), `- [ ] ${text.trim()}\n`);
-  journal(dir, `request: ${text.trim()}`);
-  console.log('Request added. The PM will turn it into tickets.');
-}
-
-function approve(id) {
-  if (!id) throw new Error('which ticket? e.g. solo-company approve T12');
-  const { dir } = needCompany();
-  const store = new TicketStore(dir);
-  const t = store.get(id);
-  if (!t || t.role !== 'ux') throw new Error(`${id} is not a UX ticket`);
-  const released = store.approveMockup(id);
-  store.save();
-  journal(dir, `mockup ${id} approved, ${released.length} dev tickets released`);
-  console.log(`${id} approved: ${released.length} ticket(s) ready for the teams.`);
-}
-
-function journal(dir, text) {
-  appendFileSync(join(dir, 'journal.log'), `${new Date().toISOString()}  ${text}\n`);
+  console.log(`\nDone. Next:
+  solo-company run                       let the company work
+  solo-company ceo "what's the plan?"    talk to it
+  Files: .solo-company/GOAL.md, REQUESTS.md, roles/*.md — edit them any time.`);
 }
