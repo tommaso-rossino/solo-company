@@ -1,0 +1,11 @@
+# secrets and local state — never commit
+.env
+*.key
+*secret*
+*token*
+state/
+logs/
+worktrees/
+__pycache__/
+node_modules/
+.DS_Store
