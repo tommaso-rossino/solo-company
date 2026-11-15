@@ -1,0 +1,22 @@
+{
+  "name": "solo-company",
+  "version": "0.0.1",
+  "description": "Turn your local AI coding agent into a small software company (WIP)",
+  "type": "module",
+  "bin": {
+    "solo-company": "bin/solo-company.js"
+  },
+  "files": ["bin", "src", "templates"],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": ["ai", "agents", "claude", "codex", "gemini", "automation", "project-management"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tommaso-rossino/solo-company.git"
+  }
+}

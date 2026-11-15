@@ -50,11 +50,21 @@ Every optional feature can be turned on later just by asking the CEO, e.g. *"ena
 npx solo-company init
 ```
 
+Not on npm yet. To try the current state from a clone (Node ≥ 22):
+
+```bash
+node bin/solo-company.js init
+node bin/solo-company.js request "add dark mode"
+node bin/solo-company.js status
+```
+
 ## Status
 
 - [x] Repository created
-- [ ] Extract the engine from the private setup, rewritten in English and generic
-- [ ] Setup wizard + agent detection
+- [x] Design draft: [docs/architecture.md](docs/architecture.md)
+- [x] Ticket register (states, priorities, dependencies, mockup approval) with tests
+- [x] Setup wizard + agent detection (first version: `init`, `status`, `request`, `approve`)
+- [ ] PM loop: requests → tickets via your agent
 - [ ] Ticket flow (PM → team → QA → merge)
 - [ ] Scheduled checks
 - [ ] Night shift
