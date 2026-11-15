@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { TicketStore } from '../src/tickets.js';
 
 process.env.SOLO_COMPANY_HOME = (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'sc-home-'));
@@ -15,7 +15,7 @@ test('ids grow and the register survives a reload', () => {
   assert.equal(s.add(base).id, 'T1');
   assert.equal(s.add(base).id, 'T2');
   s.save();
-  const again = new TicketStore(s.file.replace(/\/tickets\.json$/, ''));
+  const again = new TicketStore(dirname(s.file));
   assert.equal(again.tickets.length, 2);
   assert.equal(again.nextId(), 'T3');
 });

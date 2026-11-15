@@ -126,7 +126,7 @@ test('agent limit: tickets wait instead of failing', async () => {
 test('budget: paid fallback until the daily cap', async () => {
   const ctx = project();
   ctx.cfg.features.budget = { enabled: true, dailyUsd: 1, usdPerRun: 1, fallbackCommand: `"${process.execPath}" "${FAKE}"` };
-  ctx.cfg.agent = { name: 'custom', command: 'echo "usage limit reached"; exit 1' };
+  ctx.cfg.agent = { name: 'custom', command: `"${process.execPath}" -e "console.log('usage limit reached'); process.exit(1)"` };
   co.request(ctx, 'hello');
   const r = await work(ctx);
   assert.equal(r.limited, true);           // first call (PM) used the only paid run
