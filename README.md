@@ -63,4 +63,4 @@ npx solo-company init
 
 ## License
 
-TBD.
+[MIT](LICENSE)
