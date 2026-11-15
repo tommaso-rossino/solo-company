@@ -5,6 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { DEFAULTS, dirOf, load, save } from './config.js';
 import { TicketStore } from './tickets.js';
 import { journal, exists, readJson, pidAlive } from './util.js';
+import { register } from './registry.js';
+import { detect, ADAPTERS } from './agents.js';
+import * as g from './git.js';
+import { spawnSync } from 'node:child_process';
+import { homedir } from 'node:os';
+import { resolve } from 'node:path';
 import * as schedule from './schedule.js';
 
 const TEMPLATES = join(dirname(fileURLToPath(import.meta.url)), '..', 'templates');
@@ -19,10 +25,43 @@ export function createCompany(root, cfg, goal) {
   writeFileSync(join(dir, 'QUESTIONS.md'), '# Questions for the owner\n\nThe company writes here only about money, accounts and real choices.\n\n');
   writeFileSync(join(dir, 'tickets.json'), '[]\n');
   // Engine-local files never belong in the repository.
-  writeFileSync(join(dir, '.gitignore'), 'run.lock\nstate.json\n*.tmp\ntick.log\ninbox.jsonl\n');
+  writeFileSync(join(dir, '.gitignore'), 'run.lock\nstate.json\n*.tmp\ntick.log\ninbox.jsonl\nrun.log\ndashboard.json\ndashboard.log\n');
   for (const f of readdirSync(join(TEMPLATES, 'roles'))) copyFileSync(join(TEMPLATES, 'roles', f), join(dir, 'roles', f));
   journal(dir, 'company created');
+  if (process.env.SOLO_COMPANY_NO_REGISTRY !== '1') register(root);
   return openCompany(root);
+}
+
+// Create a company without questions (from a chat): the folder and git are made if missing.
+export function quickCreate(path, { goal, agent, agentCommand, merge = 'auto', checks } = {}) {
+  if (!String(goal || '').trim()) throw new Error('say what the project is: the goal becomes GOAL.md');
+  const root = resolve(String(path || '').replace(/^~(?=$|\/)/, homedir()));
+  if (!path) throw new Error('say where the project lives, e.g. ~/projects/recipes');
+  if (exists(join(root, '.solo-company', 'config.json'))) throw new Error(`${root} already has a company`);
+  mkdirSync(root, { recursive: true });
+  const run = (...a) => spawnSync('git', a, { cwd: root, encoding: 'utf8' });
+  if (!g.isRepo(root)) {
+    if (run('rev-parse', '--git-dir').status !== 0) run('init', '-q', '-b', 'main');
+    const who = run('config', 'user.email').status === 0 ? [] : ['-c', 'user.name=solo-company', '-c', 'user.email=solo-company@localhost'];
+    run(...who, 'commit', '-q', '--allow-empty', '-m', 'Start');
+    if (!g.isRepo(root)) throw new Error(`could not set up git in ${root}`);
+  }
+  const cfg = structuredClone(DEFAULTS);
+  if (agentCommand) cfg.agent = { name: 'custom', command: agentCommand };
+  else {
+    const name = agent || detect()[0]?.name;
+    if (!name) throw new Error(`no agent CLI found (${Object.keys(ADAPTERS).join(', ')}): install one or pass agentCommand`);
+    if (!ADAPTERS[name]) throw new Error(`unknown agent "${name}" (${Object.keys(ADAPTERS).join(', ')})`);
+    cfg.agent = { name };
+  }
+  cfg.merge = ['auto', 'pr', 'manual'].includes(merge) ? merge : 'auto';
+  cfg.mainBranch = g.currentBranch(root) || 'main';
+  if (checks) cfg.checks = [].concat(checks).filter(Boolean);
+  else {
+    const pkg = readJson(join(root, 'package.json'), null);
+    if (pkg?.scripts?.test && !/no test specified/.test(pkg.scripts.test)) cfg.checks = ['npm test'];
+  }
+  return createCompany(root, cfg, String(goal).trim());
 }
 
 export function openCompany(root = process.cwd()) {

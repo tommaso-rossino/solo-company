@@ -8,6 +8,8 @@ import { DEFAULTS } from '../src/config.js';
 import * as co from '../src/company.js';
 import { createDashboard } from '../src/dashboard.js';
 
+process.env.SOLO_COMPANY_HOME = (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'sc-home-'));
+
 process.env.SOLO_COMPANY_QUIET = '1';
 process.env.SOLO_COMPANY_NO_SCHEDULE = '1';
 

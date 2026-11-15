@@ -12,6 +12,8 @@ import { talk } from '../src/ceo.js';
 import { tick, inWindow } from '../src/health.js';
 import { extractJson } from '../src/util.js';
 
+process.env.SOLO_COMPANY_HOME = (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'sc-home-'));
+
 process.env.SOLO_COMPANY_QUIET = '1';
 process.env.SOLO_COMPANY_NO_SCHEDULE = '1';
 const FAKE = fileURLToPath(new URL('./fake-agent.js', import.meta.url));

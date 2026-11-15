@@ -11,6 +11,9 @@ import * as schedule from './schedule.js';
 import * as g from './git.js';
 import { exists } from './util.js';
 import { serve } from './dashboard.js';
+import { serveMcp } from './mcp.js';
+import { connect, overview } from './connect.js';
+import { register, list as companies } from './registry.js';
 
 const HELP = `solo-company — your local AI coding agent as a small software company
 
@@ -35,6 +38,12 @@ Decide
   resume <id> ["advice"]        restart a suspended ticket
   cancel <id>                   cancel a ticket
   priority <id> <1-5>           1 = most urgent
+
+Chat
+  connect [app]                 talk to your companies from Claude Code, Codex, Gemini, OpenCode,
+                                Cursor, Claude Desktop or Hermes ("company, let's add …")
+  mcp                           the MCP server those apps start
+  companies [add]               companies on this machine (add: register this one)
 
 Settings
   enable <feature> [k=v …]      ${Object.keys(DEFAULTS.features).join(', ')}
@@ -84,6 +93,13 @@ export async function main(argv) {
       const port = rest.includes('--port') ? Number(rest[rest.indexOf('--port') + 1]) : 4321;
       await serve(process.cwd(), { port, open: flag('--open'), tunnel: flag('--tunnel') });
       return new Promise(() => {}); // keep serving until Ctrl+C
+    }
+    case 'mcp': return serveMcp();
+    case 'connect': return console.log(rest[0] ? connect(rest[0], { dryRun: flag('--dry-run') }) : overview());
+    case 'companies': {
+      if (rest[0] === 'add') { const ctx = co.openCompany(); return console.log(`registered as "${register(ctx.root)}"`); }
+      const all = companies();
+      return console.log(all.map((c) => `${c.name.padEnd(20)} ${c.root}`).join('\n') || 'No company registered yet.');
     }
     case 'tick': { const r = await tick(co.openCompany()); if (r.busy) console.log('a run is already working'); return; }
     case 'checkup': { const r = await checkup(co.openCompany()); return console.log(r.fixed.join('\n') || 'all good'); }

@@ -1,6 +1,6 @@
 # solo-company
 
-**solo-company** turns the AI coding agent you already run on your machine (Claude Code, Codex, Gemini CLI, or any command that takes a prompt) into a small software company: a CEO you talk to, a PM that writes tickets, and dev, UX and QA teams that build, test and ship. You stay the one who decides.
+**solo-company** turns the AI coding agent you already run on your machine (Claude Code, Codex, Gemini CLI, OpenCode, Hermes Agent, or any command that takes a prompt) into a small software company: a CEO you talk to, a PM that writes tickets, and dev, UX and QA teams that build, test and ship. You stay the one who decides.
 
 It grew out of a setup used daily to build a real app with one human in the loop. This is the generic, open version of that engine. It contains no project-specific rules, paths or accounts.
 
@@ -83,6 +83,42 @@ solo-company resume T7 "use the v2 endpoint"   # restart a suspended ticket with
 solo-company priority T9 1                     # 1 = most urgent … 5 = when there is time
 solo-company cancel T9
 ```
+
+## Talk to it from any chat
+
+The company runs as an MCP server, so the chat app you already use can drive it. Connect once:
+
+```bash
+solo-company connect claude          # Claude Code
+solo-company connect codex           # Codex CLI
+solo-company connect gemini          # Gemini CLI
+solo-company connect opencode        # OpenCode
+solo-company connect hermes          # Hermes Agent
+solo-company connect cursor          # Cursor
+solo-company connect claude-desktop  # Claude Desktop
+solo-company connect                 # list, plus the command for any other MCP app
+```
+
+Then, in any chat, in any language:
+
+> company, let's add a dark mode
+> azienda, a che punto sei?
+> company, approve T4 — the mockup is fine
+> start a company in ~/projects/recipes: a recipe app for families
+
+The chat passes requests and decisions to the company. It does not build the feature itself. After a request or a decision the company starts working in a background process that outlives the chat. You can close the window.
+
+| Tool | What it does |
+|---|---|
+| `company_request` | a new idea, feature or bug, in your words |
+| `company_status` | tickets, what waits on you, the last events |
+| `company_decide` | approve / reject a mockup, resume, priority, cancel |
+| `company_ceo` | anything else: settings, the goal, questions |
+| `company_create` | a new company (creates the folder and git repo if missing) |
+| `company_dashboard` | starts the dashboard and returns its private link (`tunnel: true` for a phone) |
+| `company_report`, `company_work`, `company_list` | 24-hour report, start working now, all companies |
+
+Every company you create is listed in `~/.solo-company/companies.json`, so one chat can run several. When the chat is opened inside a project, that project's company is used. Otherwise you name it ("the recipes company"), or the chat asks you which one. `solo-company companies add` registers a company created before 0.3.
 
 ## How a ticket flows
 

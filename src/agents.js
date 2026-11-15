@@ -16,6 +16,17 @@ export const ADAPTERS = {
     bin: 'gemini', label: 'Gemini CLI',
     args: (p, mode) => ['-p', p, ...({ read: [], edit: ['--approval-mode', 'auto_edit'], full: ['--yolo'] }[mode])],
   },
+  // OpenCode: "plan" is its read-only agent; "build" edits and runs commands as its own config allows.
+  opencode: {
+    bin: 'opencode', label: 'OpenCode',
+    args: (p, mode) => ['run', ...(mode === 'read' ? ['--agent', 'plan'] : []), p],
+  },
+  // Hermes Agent: one-shot mode; the toolsets decide what it can touch.
+  // Its "file" toolset can also write, so read mode relies on the role prompt.
+  hermes: {
+    bin: 'hermes', label: 'Hermes Agent',
+    args: (p, mode) => ['-z', p, '-t', { read: 'file,web', edit: 'file,web', full: 'file,web,terminal,code_execution' }[mode], ...(mode === 'full' ? ['--yolo'] : [])],
+  },
 };
 
 export const onPath = which;

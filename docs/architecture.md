@@ -72,7 +72,11 @@ An adapter knows how to run one non-interactive prompt with a given agent CLI an
 | `claude` | `claude -p` |
 | `codex` | `codex exec` |
 | `gemini` | `gemini -p` |
+| `opencode` | `opencode run` (read-only roles use its `plan` agent) |
+| `hermes` | `hermes -z` with toolsets per mode (`file,web`, plus `terminal,code_execution` for full) |
 | `custom` | any command you give; prompt on stdin |
+
+Hermes has no strictly read-only mode: its `file` toolset can also write, so for read-only roles it relies on the role prompt.
 
 Subscription first: adapters use the CLI you are logged into. Paid API fallback and a daily spending cap are an optional feature.
 
@@ -98,6 +102,10 @@ Subscription first: adapters use the CLI you are logged into. Paid API fallback 
 | `src/health.js` | scheduled tick: deterministic repairs, shifts, morning report |
 | `src/schedule.js` | launchd / crontab install |
 | `src/ceo.js` | owner messages → reply + actions |
+| `src/mcp.js` | MCP server on stdio (JSON-RPC, no SDK): the `company_*` tools for chat apps |
+| `src/connect.js` | registers the MCP server in Claude Code, Codex, Gemini, Hermes, OpenCode, Cursor, Claude Desktop |
+| `src/registry.js` | `~/.solo-company/companies.json`: every company on the machine, resolved by name, path or current folder |
+| `src/background.js` | detached work runs and dashboards that outlive the chat |
 | `src/dashboard.js` | local web page (node:http, key in the URL): snapshot API, owner actions, sandboxed mockups, optional cloudflared tunnel |
 
 Agents answer in free text that ends with one JSON object; the engine takes the last parseable one. Anything unusable counts as a failed attempt, never as success.
@@ -106,3 +114,4 @@ Agents answer in free text that ends with one JSON object; the engine takes the 
 
 - 2026-11-15: own small runtime in Node, not built on an external orchestration platform — keeps install to one `npx` command and no extra service.
 - 2026-11-15: owner actions taken while a run holds the lock go to `inbox.jsonl` and the run applies them between steps. The run keeps the register in memory and saves it often, so writing to `tickets.json` behind its back would lose the change.
+- 2026-11-15: chat apps talk to the company through MCP instead of a plugin per app. One stdio server, written without the SDK to keep zero dependencies, works in every app that speaks MCP. Work started from a chat runs in a detached process, so closing the chat does not stop it.

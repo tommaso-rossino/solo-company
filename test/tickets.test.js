@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TicketStore } from '../src/tickets.js';
 
+process.env.SOLO_COMPANY_HOME = (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'sc-home-'));
+
 const fresh = () => new TicketStore(mkdtempSync(join(tmpdir(), 'sc-')));
 const base = { title: 'x', role: 'dev', task: 'do x', criteria: 'x works' };
 
