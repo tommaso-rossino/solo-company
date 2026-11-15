@@ -1,10 +1,10 @@
 // The company in a project: create/open it, and the owner's actions on it.
-import { mkdirSync, writeFileSync, copyFileSync, readdirSync, readFileSync, appendFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, copyFileSync, readdirSync, readFileSync, appendFileSync, renameSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULTS, dirOf, load, save } from './config.js';
 import { TicketStore } from './tickets.js';
-import { journal, exists } from './util.js';
+import { journal, exists, readJson, pidAlive } from './util.js';
 import * as schedule from './schedule.js';
 
 const TEMPLATES = join(dirname(fileURLToPath(import.meta.url)), '..', 'templates');
@@ -19,7 +19,7 @@ export function createCompany(root, cfg, goal) {
   writeFileSync(join(dir, 'QUESTIONS.md'), '# Questions for the owner\n\nThe company writes here only about money, accounts and real choices.\n\n');
   writeFileSync(join(dir, 'tickets.json'), '[]\n');
   // Engine-local files never belong in the repository.
-  writeFileSync(join(dir, '.gitignore'), 'run.lock\nstate.json\n*.tmp\ntick.log\n');
+  writeFileSync(join(dir, '.gitignore'), 'run.lock\nstate.json\n*.tmp\ntick.log\ninbox.jsonl\n');
   for (const f of readdirSync(join(TEMPLATES, 'roles'))) copyFileSync(join(TEMPLATES, 'roles', f), join(dir, 'roles', f));
   journal(dir, 'company created');
   return openCompany(root);
@@ -117,6 +117,59 @@ export function setPriority(ctx, id, p) {
   ctx.store.log(t, `priority ${t.priority}`);
   ctx.store.save();
   journal(ctx.dir, `${t.id} priority ${t.priority}`);
+}
+
+// ── owner actions while a run is working ────────────────────────────────────
+// A run keeps the ticket register in memory and saves it often: a change written
+// to disk meanwhile would be lost. So, while another process holds the run lock,
+// owner actions wait in inbox.jsonl and the run applies them between steps.
+const ACTIONS = {
+  approve: (ctx, a) => `${a.id} approved: ${approve(ctx, a.id).length} ticket(s) released`,
+  reject: (ctx, a) => { reject(ctx, a.id, a.text); return `${a.id} sent back to UX`; },
+  resume: (ctx, a) => { resume(ctx, a.id, a.text || ''); return `${a.id} is back in the queue`; },
+  cancel: (ctx, a) => { cancel(ctx, a.id); return `${a.id} cancelled`; },
+  priority: (ctx, a) => { setPriority(ctx, a.id, a.priority); return `${a.id} priority ${need(ctx, a.id).priority}`; },
+};
+
+export function runActive(dir) {
+  const held = readJson(join(dir, 'run.lock'), null);
+  return Boolean(held?.pid && held.pid !== process.pid && pidAlive(held.pid));
+}
+
+export function ownerAction(ctx, a) {
+  if (!ACTIONS[a.action]) throw new Error(`unknown action "${a.action}"`);
+  const t = need(ctx, a.id);
+  if (runActive(ctx.dir)) {
+    appendFileSync(join(ctx.dir, 'inbox.jsonl'), JSON.stringify({ ...a, id: t.id, at: new Date().toISOString() }) + '\n');
+    journal(ctx.dir, `${t.id}: ${a.action} queued for the running company`);
+    return { queued: true, message: `${t.id}: ${a.action} queued — the company applies it when its current step ends` };
+  }
+  return { queued: false, message: ACTIONS[a.action](ctx, { ...a, id: t.id }) };
+}
+
+export function queuedActions(dir) {
+  const f = join(dir, 'inbox.jsonl');
+  if (!exists(f)) return [];
+  return readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+}
+
+// Called by the run that holds the lock, on its own in-memory register.
+export function applyInbox(ctx) {
+  const f = join(ctx.dir, 'inbox.jsonl');
+  if (!exists(f)) return 0;
+  const taken = `${f}.${process.pid}.tmp`;
+  try { renameSync(f, taken); } catch { return 0; }
+  const list = readFileSync(taken, 'utf8').split('\n').filter(Boolean);
+  unlinkSync(taken);
+  for (const line of list) {
+    try {
+      const a = JSON.parse(line);
+      journal(ctx.dir, ACTIONS[a.action](ctx, a));
+    } catch (e) {
+      journal(ctx.dir, `owner action skipped: ${e.message}`);
+    }
+  }
+  return list.length;
 }
 
 export function setTeams(ctx, teams) {

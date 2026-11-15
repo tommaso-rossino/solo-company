@@ -28,10 +28,8 @@ function apply(ctx, a) {
     case 'enable': co.setFeature(ctx, a.feature, true, a.settings || {}); return `${a.feature} enabled`;
     case 'disable': co.setFeature(ctx, a.feature, false); return `${a.feature} disabled`;
     case 'teams': co.setTeams(ctx, a); return `teams: ${JSON.stringify(ctx.cfg.teams)}`;
-    case 'priority': co.setPriority(ctx, a.id, a.priority); return `${a.id} priority ${a.priority}`;
-    case 'cancel': co.cancel(ctx, a.id); return `${a.id} cancelled`;
-    case 'approve': { const n = co.approve(ctx, a.id); return `${a.id} approved (${n.length} ticket(s) released)`; }
-    case 'resume': co.resume(ctx, a.id, a.advice || ''); return `${a.id} resumed`;
+    case 'priority': case 'cancel': case 'approve': case 'resume':
+      return co.ownerAction(ctx, { action: a.type, id: a.id, priority: a.priority, text: a.advice || '' }).message;
     case 'goal': co.setGoal(ctx, a.text); return 'goal updated';
     default: throw new Error('unknown action');
   }

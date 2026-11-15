@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync, readdirSync, cpSync, unlinkSync, openSync, cl
 import { join } from 'node:path';
 import { ask } from './agents.js';
 import { pmPrompt, workPrompt, qaPrompt } from './prompts.js';
-import { pendingRequests, markRequests, addQuestion } from './company.js';
+import { pendingRequests, markRequests, addQuestion, applyInbox } from './company.js';
 import { journal, extractJson, runChecks, tail, exists, pidAlive, readJson, state } from './util.js';
 import * as g from './git.js';
 
@@ -312,6 +312,7 @@ export async function work(ctx, { once = false, teams = null } = {}) {
 
     for (;;) {
       let did = false;
+      applyInbox(ctx); // owner actions sent while this run was busy
       if (pmErrors < 2 && pendingRequests(dir).length) {
         const p = await plan(ctx);
         if (p.limited) { stats.limited = true; break; }

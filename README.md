@@ -57,7 +57,22 @@ solo-company run                               # work until the queue is empty
 solo-company run --watch 10                    # keep working, check for new work every 10 min
 solo-company status                            # tickets by state
 solo-company questions                         # what the company is waiting on you for
+solo-company dashboard --open                  # the same in a web page, with buttons
 ```
+
+## Dashboard
+
+`solo-company dashboard` serves a local web page at `http://127.0.0.1:4321`. The address it prints carries a random key; without the key the page refuses to load.
+
+- Tickets in columns: to do, in progress, review / QA, needs you, done.
+- What is waiting on you: mockups to approve, suspended tickets, questions.
+- The journal, the pending requests, the goal, the agent, the teams and today's spend.
+- Buttons: approve or send back a mockup, resume a suspended ticket with advice, change priority, cancel, add a request.
+- It refreshes every 5 seconds and works on a phone screen.
+
+Options: `--open` opens the browser, `--port <n>` changes the port, `--tunnel` gives a public link through [cloudflared](https://github.com/cloudflare/cloudflared) so you can follow the company from your phone. Anyone with that link can act on the company, so keep it private.
+
+While a run is working, an action from the dashboard, the CLI or the CEO waits in `.solo-company/inbox.jsonl`. The run applies it as soon as its current step ends, so nothing it saves can overwrite your decision.
 
 Decisions:
 

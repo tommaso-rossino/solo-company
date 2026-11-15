@@ -32,7 +32,7 @@ your-project/
     ├── QUESTIONS.md     # what the company needs from the owner
     ├── roles/           # editable role prompts
     ├── mockups/ research/ reports/
-    └── journal.log      # what happened, one line per event
+    ├── journal.log      # what happened, one line per event
 
 ~/.solo-company/worktrees/<project>-<hash>/   # one worktree per ticket + _integration
 ```
@@ -98,9 +98,11 @@ Subscription first: adapters use the CLI you are logged into. Paid API fallback 
 | `src/health.js` | scheduled tick: deterministic repairs, shifts, morning report |
 | `src/schedule.js` | launchd / crontab install |
 | `src/ceo.js` | owner messages → reply + actions |
+| `src/dashboard.js` | local web page (node:http, key in the URL): snapshot API, owner actions, sandboxed mockups, optional cloudflared tunnel |
 
 Agents answer in free text that ends with one JSON object; the engine takes the last parseable one. Anything unusable counts as a failed attempt, never as success.
 
 ## Decisions log
 
 - 2026-11-15: own small runtime in Node, not built on an external orchestration platform — keeps install to one `npx` command and no extra service.
+- 2026-11-15: owner actions taken while a run holds the lock go to `inbox.jsonl` and the run applies them between steps. The run keeps the register in memory and saves it often, so writing to `tickets.json` behind its back would lose the change.

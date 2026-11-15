@@ -10,6 +10,7 @@ import { talk } from './ceo.js';
 import * as schedule from './schedule.js';
 import * as g from './git.js';
 import { exists } from './util.js';
+import { serve } from './dashboard.js';
 
 const HELP = `solo-company — your local AI coding agent as a small software company
 
@@ -24,6 +25,8 @@ Work
   status                        tickets by state
   log [n]                       last n journal lines (default 30)
   questions                     what the company is waiting on you for
+  dashboard [--open] [--tunnel] [--port n]
+                                web page with tickets, journal and buttons; --tunnel for your phone
   report                        write a report of the last 24 hours
 
 Decide
@@ -51,11 +54,12 @@ export async function main(argv) {
     case 'request': co.request(co.openCompany(), rest.join(' ')); return console.log('Request added. The PM will turn it into tickets.');
     case 'plan': { const r = await plan(co.openCompany()); return console.log(r.limited ? 'The agent is at its limit: try later.' : `${r.added} ticket(s) added.`); }
     case 'run': return run(rest, flag);
-    case 'approve': { const r = co.approve(co.openCompany(), rest[0]); return console.log(`${rest[0]} approved: ${r.length} ticket(s) ready for the teams.`); }
-    case 'reject': co.reject(co.openCompany(), rest[0], rest.slice(1).join(' ')); return console.log('Sent back to UX.');
-    case 'resume': co.resume(co.openCompany(), rest[0], rest.slice(1).join(' ')); return console.log(`${rest[0]} is back in the queue.`);
-    case 'cancel': co.cancel(co.openCompany(), rest[0]); return console.log(`${rest[0]} cancelled.`);
-    case 'priority': co.setPriority(co.openCompany(), rest[0], rest[1]); return;
+    case 'approve': case 'reject': case 'resume': case 'cancel': case 'priority': {
+      const [id, ...more] = rest;
+      const extra = cmd === 'priority' ? { priority: more[0] } : { text: more.join(' ') };
+      if (cmd === 'reject' && !extra.text) throw new Error('say what to change: solo-company reject <id> "bigger buttons"');
+      return console.log(co.ownerAction(co.openCompany(), { action: cmd, id, ...extra }).message);
+    }
     case 'ceo': case 'ask': case 'tell': {
       const r = await talk(co.openCompany(), rest.join(' '));
       console.log(`\n${r.reply}`);
@@ -75,6 +79,11 @@ export async function main(argv) {
       if (!['install', 'remove', 'status'].includes(sub)) throw new Error('schedule install | remove | status');
       if (sub !== 'status') { ctx.cfg.features.scheduledChecks.enabled = sub === 'install'; co.saveConfig(ctx); }
       return console.log(schedule[sub](ctx));
+    }
+    case 'dashboard': {
+      const port = rest.includes('--port') ? Number(rest[rest.indexOf('--port') + 1]) : 4321;
+      await serve(process.cwd(), { port, open: flag('--open'), tunnel: flag('--tunnel') });
+      return new Promise(() => {}); // keep serving until Ctrl+C
     }
     case 'tick': { const r = await tick(co.openCompany()); if (r.busy) console.log('a run is already working'); return; }
     case 'checkup': { const r = await checkup(co.openCompany()); return console.log(r.fixed.join('\n') || 'all good'); }
